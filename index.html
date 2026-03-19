@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Expansion Pro-Rate Calculator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.5; cursor: pointer; }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo } = React;
+
+    const BILLING_CYCLES = [
+      { value: "monthly",   label: "Monthly",   months: 1  },
+      { value: "quarterly", label: "Quarterly", months: 3  },
+      { value: "annual",    label: "Annual",    months: 12 },
+    ];
+
+    function daysBetween(dateStr1, dateStr2) {
+      const d1 = new Date(dateStr1 + "T00:00:00");
+      const d2 = new Date(dateStr2 + "T00:00:00");
+      return Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+    }
+
+    function fmt(n) {
+      return new Intl.NumberFormat("en-US", {
+        style: "currency", currency: "USD",
+        minimumFractionDigits: 2, maximumFractionDigits: 2,
+      }).format(n);
+    }
+
+    function fmtDate(dateStr) {
+      if (!dateStr) return "";
+      return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", {
+        month: "short", day: "numeric", year: "numeric",
+      });
+    }
+
+    function CurrencyInput({ label, value, onChange }) {
+      return (
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+            {label}
+          </label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
+            <input
+              type="number" min="0" step="any"
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder="0.00"
+              className="w-full pl-7 pr-3 py-2.5 border border-gray-200 rounded-xl text-gray-800 font-medium focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none bg-gray-50 focus:bg-white transition-colors"
+            />
+          </div>
+        </div>
+      );
+    }
+
+    function DateInput({ label, value, onChange }) {
+      return (
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+            {label}
+          </label>
+          <input
+            type="date" value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-gray-800 font-medium focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none bg-gray-50 focus:bg-white transition-colors"
+          />
+        </div>
+      );
+    }
+
+    function ResultCard({ label, amount, sub, accent, large }) {
+      return (
+        <div className={`rounded-2xl p-5 ${accent ? "bg-gradient-to-br from-violet-600 to-indigo-600 text-white" : "bg-white border border-gray-100 shadow-sm"}`}>
+          <p className={`text-xs font-semibold uppercase tracking-wider mb-1 ${accent ? "text-violet-200" : "text-gray-400"}`}>
+            {label}
+          </p>
+          <p className={`font-bold ${large ? "text-3xl" : "text-2xl"} ${accent ? "text-white" : "text-gray-800"}`}>
+            {fmt(amount)}
+          </p>
+          {sub && (
+            <p className={`text-xs mt-1.5 leading-relaxed ${accent ? "text-violet-200" : "text-gray-400"}`}>{sub}</p>
+          )}
+        </div>
+      );
+    }
+
+    function App() {
+      const today = new Date().toISOString().split("T")[0];
+
+      const [currentAnnual, setCurrentAnnual] = useState("");
+      const [newAnnual,     setNewAnnual]     = useState("");
+      const [billingCycle,  setBillingCycle]  = useState("annual");
+      const [startDate,     setStartDate]     = useState(today);
+      const [nextBillingDate, setNextBillingDate] = useState("");
+
+      const cycleInfo = BILLING_CYCLES.find((c) => c.value === billingCycle);
+
+      const results = useMemo(() => {
+        const current = parseFloat(currentAnnual) || 0;
+        const newP    = parseFloat(newAnnual)     || 0;
+
+        if (!startDate || !nextBillingDate) return null;
+        const daysRemaining = daysBetween(startDate, nextBillingDate);
+        if (daysRemaining <= 0 || newP <= current) return null;
+
+        const expansionAnnual  = newP - current;
+        const proRatedExpansion = (expansionAnnual / 365) * daysRemaining;
+        const nextFullBill      = (newP / 12) * cycleInfo.months;
+        const cycleDays         = (cycleInfo.months / 12) * 365;
+        const percentRemaining  = Math.min(Math.round((daysRemaining / cycleDays) * 100), 100);
+
+        return { daysRemaining, expansionAnnual, proRatedExpansion, nextFullBill, percentRemaining };
+      }, [currentAnnual, newAnnual, billingCycle, startDate, nextBillingDate, cycleInfo]);
+
+      const current = parseFloat(currentAnnual) || 0;
+      const newP    = parseFloat(newAnnual)     || 0;
+      const hasInputs = currentAnnual && newAnnual && startDate && nextBillingDate;
+      const showNegativeError = hasInputs && newP <= current;
+      const showDateError     = hasInputs && !showNegativeError && results === null;
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-violet-50 to-indigo-50 p-6">
+          <div className="max-w-xl mx-auto">
+
+            {/* Header */}
+            <div className="mb-7">
+              <div className="flex items-center gap-2.5 mb-2">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white text-sm font-bold">↑</div>
+                <h1 className="text-xl font-bold text-gray-900">Expansion Pro-Rate Calculator</h1>
+              </div>
+              <p className="text-gray-500 text-sm ml-11">Estimate mid-cycle expansion charges for AEs</p>
+            </div>
+
+            {/* Inputs */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">Deal Details</p>
+
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <CurrencyInput label="Current Annual Pricing" value={currentAnnual} onChange={setCurrentAnnual} />
+                <CurrencyInput label="New Annual Pricing"     value={newAnnual}     onChange={setNewAnnual}     />
+              </div>
+
+              {current > 0 && newP > current && (
+                <div className="flex items-center gap-2 mb-4 bg-emerald-50 rounded-xl px-4 py-2.5">
+                  <span className="text-emerald-600 font-bold text-sm">+{fmt(newP - current)}</span>
+                  <span className="text-emerald-600 text-sm">ARR expansion</span>
+                  <span className="text-emerald-400 text-xs ml-auto">+{Math.round(((newP - current) / current) * 100)}% growth</span>
+                </div>
+              )}
+
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Billing Cycle</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {BILLING_CYCLES.map((c) => (
+                    <button
+                      key={c.value}
+                      onClick={() => setBillingCycle(c.value)}
+                      className={`py-2 px-2 rounded-xl text-sm font-medium border transition-all ${
+                        billingCycle === c.value
+                          ? "bg-violet-600 text-white border-violet-600 shadow-sm"
+                          : "bg-gray-50 text-gray-600 border-gray-200 hover:border-violet-300 hover:bg-violet-50"
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <DateInput label="New Pricing Start Date" value={startDate}       onChange={setStartDate}       />
+                <DateInput label="Next Billing Date"      value={nextBillingDate} onChange={setNextBillingDate} />
+              </div>
+
+              {showNegativeError && (
+                <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+                  New annual pricing must be greater than current pricing for an expansion.
+                </div>
+              )}
+              {showDateError && (
+                <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+                  Next billing date must be after new pricing start date.
+                </div>
+              )}
+            </div>
+
+            {/* Results */}
+            {results ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+
+                {/* Progress bar */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-5 py-4">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs text-gray-500 font-medium">
+                      {results.daysRemaining} days from <span className="text-gray-700">{fmtDate(startDate)}</span> to <span className="text-gray-700">{fmtDate(nextBillingDate)}</span>
+                    </span>
+                    <span className="text-xs font-semibold text-violet-600">
+                      {results.percentRemaining}% of {cycleInfo.label.toLowerCase()} cycle
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-1.5">
+                    <div
+                      className="bg-gradient-to-r from-violet-500 to-indigo-500 h-1.5 rounded-full"
+                      style={{ width: `${results.percentRemaining}%`, transition: "width 0.4s ease" }}
+                    />
+                  </div>
+                </div>
+
+                {/* Hero card */}
+                <ResultCard
+                  label="Pro-Rated Expansion Charge"
+                  amount={results.proRatedExpansion}
+                  sub={`${fmt(results.expansionAnnual)} expansion ÷ 365 × ${results.daysRemaining} days remaining`}
+                  accent large
+                />
+
+                <ResultCard
+                  label="Total Next Invoice"
+                  amount={results.nextFullBill}
+                  sub={`${cycleInfo.label} charge at new pricing from ${fmtDate(nextBillingDate)}`}
+                />
+
+                {/* Formula breakdown */}
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">How It's Calculated</p>
+                  <div className="text-sm text-gray-600" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <div className="flex justify-between">
+                      <span>Expansion ARR</span>
+                      <span className="font-semibold text-gray-800">{fmt(newP)} − {fmt(current)} = {fmt(results.expansionAnnual)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Daily expansion rate</span>
+                      <span className="font-semibold text-gray-800">{fmt(results.expansionAnnual / 365)}/day</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Days remaining × daily rate</span>
+                      <span className="font-semibold text-violet-700">{results.daysRemaining} × {fmt(results.expansionAnnual / 365)} = {fmt(results.proRatedExpansion)}</span>
+                    </div>
+                    <div style={{ borderTop: "1px solid #f3f4f6", paddingTop: "8px" }} className="flex justify-between">
+                      <span>Next {cycleInfo.label.toLowerCase()} bill at new pricing</span>
+                      <span className="font-semibold text-gray-800">{fmt(results.nextFullBill)}</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-10 text-center">
+                <p className="text-2xl mb-2">🧮</p>
+                <p className="text-gray-400 text-sm">Fill in the deal details above to see the estimate</p>
+              </div>
+            )}
+
+            <p className="text-xs text-gray-400 text-center mt-5 pb-4">
+              For internal estimation only · Pro-rate uses 365-day annual convention
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
